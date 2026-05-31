@@ -3,7 +3,9 @@ package com.mediaforge.videoflux.admin.ui.controller;
 import java.io.InputStream;
 import java.security.Principal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -18,8 +20,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,8 +27,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RestController;
 
-@Controller
+@RestController
 @RequestMapping("/admin")
 public class AdminUIController {
     @Value("${video-flux.storage.bucket.name:origin-video}")
@@ -38,41 +39,45 @@ public class AdminUIController {
     private MinIOStorageService minIOStorageService;
 
     @GetMapping("/")
-    public String root() {
-        return "redirect:/admin/videos";
+    public ResponseEntity<Void> root() {
+        return ResponseEntity.status(302).header("Location", "/admin/video").build();
     }
-    
+
     @GetMapping("")
-    public String rootSlash() {
-        return "redirect:/admin/videos";
+    public ResponseEntity<Void> rootSlash() {
+        return ResponseEntity.status(302).header("Location", "/admin/video").build();
     }
-    
-    @GetMapping("/login")
-    public String loginPage() {
-        return "login";
+
+    @GetMapping("/user")
+    @ResponseBody
+    public ResponseEntity<?> getUser(Principal principal) {
+        if (principal != null) {
+            return ResponseEntity.ok().body(Map.of("username", principal.getName()));
+        }
+        return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
     }
-    
-    @GetMapping("/register")
-    public String registerPage() {
-        return "register";
-    }
-    
+
     @GetMapping("/dashboard")
-    public String dashboard(Model model, Principal principal) {
+    @ResponseBody
+    public ResponseEntity<?> dashboard(Principal principal) {
+        Map<String, Object> response = new HashMap<>();
         // Add user information to model
         if (principal != null) {
-            model.addAttribute("username", principal.getName());
+            response.put("username", principal.getName());
         }
         // Add empty video list to model
-        model.addAttribute("videos", new ArrayList<>());
-        return "dashboard";
+        response.put("videos", new ArrayList<>());
+        response.put("images", new ArrayList<>());
+        return ResponseEntity.ok(response);
     }
-    
-    @GetMapping("/videos")
-    public String listVideos(Model model, Principal principal, @RequestParam(defaultValue = "") String path) {
+
+    @GetMapping("/video")
+    @ResponseBody
+    public ResponseEntity<?> listVideos(Principal principal, @RequestParam(defaultValue = "") String path) {
+        Map<String, Object> response = new HashMap<>();
         // Add user information to model
         if (principal != null) {
-            model.addAttribute("username", principal.getName());
+            response.put("username", principal.getName());
         }
 
         // Get video list from MinIO
@@ -86,7 +91,7 @@ public class AdminUIController {
                     .recursive(false)
                     .build()
             );
-            
+
             for (Result<Item> result : results) {
                 Item item = result.get();
                 String objectName = item.objectName();
@@ -118,7 +123,7 @@ public class AdminUIController {
                         finalObjectName = path + displayName + "/";
                     }
                 }
-                
+
                 VideoInfo videoInfo = new VideoInfo();
                 videoInfo.setFileName(displayName);
                 // Handle case where lastModified might be null
@@ -142,10 +147,11 @@ public class AdminUIController {
             // If getting video list fails, log error and use empty list
             e.printStackTrace();
         }
-        
-        model.addAttribute("videos", videos);
-        model.addAttribute("currentPath", path);
-        return "video-list";
+
+        response.put("images", videos);
+        response.put("videos", videos);
+        response.put("currentPath", path);
+        return ResponseEntity.ok(response);
     }
     
     @PostMapping("/video/create-folder")
@@ -189,23 +195,27 @@ public class AdminUIController {
     }
     
     @GetMapping("/video/{path}")
-    public String viewVideo(@PathVariable String path, Model model, Principal principal) {
+    @ResponseBody
+    public ResponseEntity<?> viewVideo(@PathVariable String path, Principal principal) {
+        Map<String, Object> response = new HashMap<>();
         // Add user information to model
         if (principal != null) {
-            model.addAttribute("username", principal.getName());
+            response.put("username", principal.getName());
         }
-        // Add empty video object to model (simplified implementation)
-        model.addAttribute("video", new Object() {
-            public String getFileHash() { return "sample-hash"; }
-            public String getFileName() { return "sample.jpg"; }
-            public Integer getWidth() { return 800; }
-            public Integer getHeight() { return 600; }
-            public Long getFileSize() { return 102400L; }
-            public String getContentType() { return "video/mp4"; }
-            public String getCreatedAt() { return "2023-01-01 12:00:00"; }
-            public String getFilePath() { return "/path/to/sample.jpg"; }
-        });
-        return "video-view";
+        // Add video object to response (simplified implementation)
+        Map<String, Object> video = new HashMap<>();
+        video.put("id", path);
+        video.put("fileHash", "sample-hash");
+        video.put("fileName", "sample.jpg");
+        video.put("width", 800);
+        video.put("height", 600);
+        video.put("fileSize", 102400L);
+        video.put("contentType", "video/mp4");
+        video.put("createdAt", "2023-01-01 12:00:00");
+        video.put("filePath", "/admin/video/" + path);
+        response.put("image", video);
+        response.put("video", video);
+        return ResponseEntity.ok(response);
     }
 
     // Add endpoint to view video directly
